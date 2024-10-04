@@ -1,14 +1,54 @@
 import { Handler } from "express";
 import { prisma } from "../database";
-import { CreateLeadRequestSchema, UpdateLeadRequestSchema } from "./schemas/LeadsRequestSchema";
+import {
+  CreateLeadRequestSchema,
+  GetLeadsRequestSchema,
+  UpdateLeadRequestSchema,
+} from "./schemas/LeadsRequestSchema";
 import { HttpError } from "../errors/HttpError";
+import { Prisma } from "@prisma/client";
 
 export class LeadsController {
   // GET /leads
   index: Handler = async (req, res, next) => {
     try {
-      const leads = await prisma.lead.findMany();
-      res.json(leads);
+      const query = GetLeadsRequestSchema.parse(req.query);
+      const {
+        page = "1",
+        pageSize = "10",
+        name,
+        status,
+        sortBy = "name",
+        order = "asc",
+      } = query;
+
+      const pageNumber = Number(page);
+      const pageSizeNumber = Number(pageSize);
+
+      const where: Prisma.LeadWhereInput = {};
+
+      if (name) where.name = { contains: name, mode: "insensitive" };
+      if (status) where.status = status;
+
+      const leads = await prisma.lead.findMany({
+        where,
+        skip: (pageNumber - 1) * pageSizeNumber,
+        take: pageSizeNumber,
+        orderBy: {
+          [sortBy]: order,
+        },
+      });
+
+      const total = await prisma.lead.count({ where });
+      res.status(201).json({
+        data: leads,
+        meta: {
+          page: pageNumber,
+          pageSize: pageSizeNumber,
+          total,
+          totalPages: Math.ceil(total / pageSizeNumber)
+        }
+      });
     } catch (error) {
       next(error);
     }
@@ -49,34 +89,34 @@ export class LeadsController {
     try {
       const { id } = req.params;
       const find = await prisma.lead.findUnique({
-        where: {id: +id}
-      })
-      if(!find) throw new HttpError(404, "Lead não encontrada")
+        where: { id: +id },
+      });
+      if (!find) throw new HttpError(404, "Lead não encontrada");
       const deletedLead = await prisma.lead.delete({
         where: { id: +id },
       });
       res.status(201).json(deletedLead);
     } catch (error) {
-      next(error)
+      next(error);
     }
   };
   //PUT /leads/id
   update: Handler = async (req, res, next) => {
     try {
-      const { id } = req.params
+      const { id } = req.params;
       const find = await prisma.lead.findUnique({
-        where: {id: +id}
-      })
-      if(!find) throw new HttpError(404, "Lead não encontrada")
-      const body = UpdateLeadRequestSchema.parse(req.body)
+        where: { id: +id },
+      });
+      if (!find) throw new HttpError(404, "Lead não encontrada");
+      const body = UpdateLeadRequestSchema.parse(req.body);
       const updatedLead = await prisma.lead.update({
         data: body,
-        where: {id: +id}
-      })
+        where: { id: +id },
+      });
 
-      res.status(201).json(updatedLead)
+      res.status(201).json(updatedLead);
     } catch (error) {
-      next(error)
+      next(error);
     }
-  }
+  };
 }
